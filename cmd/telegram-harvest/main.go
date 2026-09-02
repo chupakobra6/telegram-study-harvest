@@ -92,6 +92,11 @@ func run(args []string, stdin, stdout, stderr *os.File) int {
 			return printError(stderr, 1, err)
 		}
 		return 0
+	case "send-saved":
+		if err := runSendSaved(cfg, client, args[1:], stdout); err != nil {
+			return printError(stderr, 1, err)
+		}
+		return 0
 	case "daily":
 		if err := runDaily(cfg, client, args[1:], stdout); err != nil {
 			return printError(stderr, 1, err)
@@ -157,7 +162,7 @@ func run(args []string, stdin, stdout, stderr *os.File) int {
 func knownCommand(command string) bool {
 	switch command {
 	case "print-config", "doctor", "login", "daily", "daily-catchup", "daily-download-media",
-		"me", "chats", "topics", "dump", "download-media", "sync", "compact", "agent-view", "transcribe-file":
+		"me", "chats", "topics", "dump", "download-media", "sync", "compact", "agent-view", "transcribe-file", "send-saved":
 		return true
 	default:
 		return false
@@ -201,9 +206,9 @@ func loadProfileConfig(profile string) (config.Config, error) {
 }
 
 func printUsage(out io.Writer) {
-	fmt.Fprintln(out, "usage: telegram-harvest --profile main|study <doctor|print-config|login|me|chats|topics|dump|sync|download-media|compact|agent-view|daily|daily-catchup|daily-download-media|transcribe-file> [options]")
+	fmt.Fprintln(out, "usage: telegram-harvest --profile main|study <doctor|print-config|login|me|chats|topics|dump|sync|download-media|compact|agent-view|daily|daily-catchup|daily-download-media|transcribe-file|send-saved> [options]")
 	fmt.Fprintln(out, "")
-	fmt.Fprintln(out, "Telegram operations are read-only; commands may write local sessions, state, and exports")
+	fmt.Fprintln(out, "Harvesting operations are read-only; send-saved is the only Telegram write operation")
 	fmt.Fprintln(out, "  --profile main|study  # required account profile")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Primary daily workflow:")
@@ -216,6 +221,8 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "  me [--json]")
 	fmt.Fprintln(out, "  chats --query вшэ --limit 300 [--json]  # output is filtered by the study allowlist when set")
 	fmt.Fprintln(out, "  topics --chat <allowed-id-or-username> --limit 200 [--json]")
+	fmt.Fprintln(out, "  send-saved --text <message> [--json]  # @Pheik13 main session -> InputPeerSelf only")
+	fmt.Fprintln(out, "  send-saved --file </absolute/path> [--caption <message>] [--json]")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Low-level agent primitives:")
 	fmt.Fprintln(out, "  Relative input/output paths below are resolved inside the selected profile state directory")
@@ -262,7 +269,8 @@ func printDoctor(cfg config.Config, out io.Writer, client *mtproto.Client, inclu
 	fmt.Fprintf(out, "state_dir_exists=%t\n", fileExists(cfg.StateDir))
 	fmt.Fprintf(out, "allowed_chats=%d\n", cfg.AllowedChatCount())
 	fmt.Fprintf(out, "daily_additional_senders=%d\n", cfg.DailyAdditionalSenderCount())
-	fmt.Fprintf(out, "read_only=true\n")
+	fmt.Fprintf(out, "harvesting_read_only=true\n")
+	fmt.Fprintf(out, "saved_messages_send_enabled=%t\n", cfg.Mode == config.ModeMain)
 	if includeDailyRuntime {
 		printDailyRuntimeConfig(out, true)
 	}
@@ -452,6 +460,52 @@ func runMe(cfg config.Config, client *mtproto.Client, args []string, out io.Writ
 			return nil
 		})
 	})
+}
+
+func runSendSaved(cfg config.Config, client *mtproto.Client, args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("send-saved", flag.ContinueOnError)
+	fs.SetOutput(out)
+	textValue := fs.String("text", "", "text message to send to Saved Messages")
+	filePath := fs.String("file", "", "file to send to Saved Messages")
+	caption := fs.String("caption", "", "optional file caption")
+	jsonOut := fs.Bool("json", false, "print verified readback as JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("send-saved does not accept positional arguments or a recipient")
+	}
+
+	var result mtproto.SendSavedResult
+	err := withRuntimeLock(cfg, func() error {
+		var sendErr error
+		result, sendErr = client.SendSaved(context.Background(), mtproto.SendSavedOptions{
+			Text:     *textValue,
+			FilePath: *filePath,
+			Caption:  *caption,
+		})
+		return sendErr
+	})
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		encoder := json.NewEncoder(out)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(result)
+	}
+
+	fmt.Fprintf(out, "sent_to=saved_messages\n")
+	fmt.Fprintf(out, "account=@%s\n", result.Profile.Username)
+	fmt.Fprintf(out, "message_id=%d\n", result.Message.MessageID)
+	fmt.Fprintf(out, "verified=%t\n", result.Verified)
+	if len(result.Message.Attachments) == 1 {
+		attachment := result.Message.Attachments[0]
+		fmt.Fprintf(out, "file_name=%s\n", attachment.FileName)
+		fmt.Fprintf(out, "mime_type=%s\n", attachment.MIMEType)
+		fmt.Fprintf(out, "byte_size=%d\n", attachment.Size)
+	}
+	return nil
 }
 
 func maskCLIPhone(phone string) string {

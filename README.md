@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/chupakobra6/telegram-harvest/actions/workflows/ci.yml/badge.svg)](https://github.com/chupakobra6/telegram-harvest/actions/workflows/ci.yml)
 
-Локальный read-only CLI для сбора Telegram-данных через MTProto user authorization.
+Локальный CLI для сбора Telegram-данных через MTProto user authorization. Все harvest-команды read-only; единственная операция записи — узкая отправка самому себе в «Избранное» основного аккаунта.
 Проект рассчитан на два практических сценария:
 
 - **daily reports** - личные исходящие сообщения и настроенные chat-scoped источники за день, Markdown-отчеты в `reports/daily`, локальная транскрибация voice/audio/round-video и коротких вертикальных phone-like video через production Whisper pipeline;
@@ -22,7 +22,7 @@ CLI один и тот же для всех сценариев. Аккаунт �
 | Daily ASR | Один адаптивный профиль whisper.cpp large-v3-turbo q5_0 на Metal: быстрый short decode для обычных сообщений и защищённый long-form для длинного либо долго молчащего медиа. |
 | Study sync | `dump`/`sync` читают только allowlisted-чаты, поддерживают resumable backfill и производят JSONL. |
 | Agent view | `agent-view` и `compact` строят компактные Markdown/TOON-представления из JSONL. |
-| Safety | Инструмент не отправляет сообщения и не мутирует Telegram-состояние. History и выбор файлов идут последовательно и с pacing; downloader использует не более двух глобальных Telegram chunk slots. |
+| Safety | Harvest-команды не мутируют Telegram. `send-saved` доступна только профилю `main`, проверяет активную сессию как `@Pheik13`, использует только `InputPeerSelf` и не принимает адресата. History и выбор файлов идут последовательно и с pacing; downloader использует не более двух глобальных Telegram chunk slots. |
 
 ## Быстрый старт
 
@@ -89,6 +89,17 @@ make daily PROFILE=main DATE=2026-06-04
 make daily-catchup PROFILE=main
 make sync CHAT=1234567890 NAME=study-main PROFILE=study
 ```
+
+## Отправка в «Избранное»
+
+Когда пользователь просит отправить что-либо «мне», «в Telegram» или «в Избранное», используется только сессия `@Pheik13` и только self-peer:
+
+```bash
+bin/telegram-harvest --profile main send-saved --text 'Текст сообщения'
+bin/telegram-harvest --profile main send-saved --file '/absolute/path/Документ.pdf' --caption 'Памятка'
+```
+
+Команда не имеет флага адресата и не умеет отправлять другим пользователям или чатам. Профиль `study` отклоняется до подключения, а профиль `main` перед отправкой сверяется с username `@Pheik13`. После отправки сообщение читается обратно из `InputPeerSelf`; для документа сверяются имя файла, MIME-тип и размер. `--json` возвращает проверенный readback.
 
 ## Daily reports
 

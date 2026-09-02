@@ -1,13 +1,13 @@
 # AGENTS.md
 
 ## Project Overview
-- Local Go CLI for read-only Telegram harvesting through MTProto user authorization.
+- Local Go CLI for read-only Telegram harvesting plus one tightly scoped Saved Messages send primitive through MTProto user authorization.
 - The tool exports selected study chat data and daily personal context for downstream automation and agent reads.
 - Keep runtime credentials, sessions, state, dumps, and generated agent views out of git.
 - Study runtime scope is the configured study-chat allowlist; main-profile daily harvest scope is outgoing/self messages plus configured chat-scoped additional senders for one day.
 
 ## Safety
-- Read-only is a hard boundary: do not add commands that send messages, click buttons, delete messages, pin/unpin, join chats, mark chats read, or mutate Telegram state.
+- Harvesting is a read-only hard boundary. The sole permitted mutation is `send-saved`: it must use profile `main`, verify that the authorized account is `@Pheik13`, target `InputPeerSelf`, expose no recipient argument, and read the sent message back. Do not add any other send, click, delete, pin/unpin, join, or mark-read operation.
 - Keep history crawlers and high-level media selection sequential and paced. Media downloads share exactly two global Telegram chunk slots: one worker below 1 MiB, two workers from 1 MiB, so either two small files or one large file may transfer at once. History RPC sections are exclusive with downloads; production chunk concurrency remains capped at two.
 - Accept Telegram performance changes only after same-corpus A/B checks preserve message keys and stable JSONL/media content with zero Telegram errors and zero FloodWait. Never promote a faster probe setting that fails those checks.
 - Treat `.env`, `.sessions/`, `.state/`, dumps, and chat exports as private local data.
@@ -22,6 +22,8 @@
 - Build reusable CLI: `make build`; Make commands rebuild `bin/telegram-harvest` only when Go/module inputs change.
 - Doctor: `make doctor PROFILE=<main|study>`
 - Login: `make login PROFILE=<main|study>`
+- Send text to the main account's own Saved Messages: `bin/telegram-harvest --profile main send-saved --text <message>`
+- Send a file to the main account's own Saved Messages: `bin/telegram-harvest --profile main send-saved --file </absolute/path> [--caption <message>]`
 - Daily harvest: `make daily PROFILE=main DATE=yesterday`
 - Daily catch-up through yesterday: `make daily-catchup PROFILE=main`
 - List chats: `bin/telegram-harvest --profile study chats --query вшэ`
@@ -61,6 +63,7 @@
 - Main profile uses `TG_HARVEST_DAILY_*`. Study profile uses `TG_HARVEST_STUDY_*`. Do not add alternate env aliases.
 - `TG_HARVEST_DAILY_ADDITIONAL_SENDERS` contains comma-separated `chat_id:sender_id` pairs. Additional senders must remain scoped to their configured chats; never include all incoming messages from those chats.
 - CLI commands must receive `--profile main|study`; do not add command-based profile defaults or profile env fallbacks.
+- `send-saved` must remain recipient-free and self-only. Never resolve a username, phone, chat, or user for delivery; never route through another account. Its `main` session must identify as `@Pheik13` before the first write, and the sent message must be verified by self-peer readback. For files, filename, MIME type, and byte size must all match.
 - Telegram pacing/history defaults are code-owned; do not add env knobs for RPC spacing, history batch size, history limit, max batches, or dialog limit.
 - Both profiles use explicit Telegram API credentials and CLI `login`; do not read or import Telegram Desktop `tdata`.
 - Study `dump` and `sync` do not transcribe audio/video. They save inspectable study materials such as photos, image documents, and generic documents; audio/video transcription is a daily-harvest feature only.

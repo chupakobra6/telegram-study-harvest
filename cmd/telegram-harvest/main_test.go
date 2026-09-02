@@ -12,6 +12,7 @@ import (
 
 	"github.com/chupakobra6/telegram-harvest/internal/config"
 	"github.com/chupakobra6/telegram-harvest/internal/harvest"
+	"github.com/chupakobra6/telegram-harvest/internal/mtproto"
 	"github.com/chupakobra6/telegram-harvest/internal/stages"
 	"github.com/chupakobra6/telegram-harvest/internal/transcribe"
 )
@@ -28,9 +29,11 @@ func TestRunHelpPrintsCommands(t *testing.T) {
 		"daily-catchup",
 		"daily-download-media --chat",
 		"transcribe-file --input",
+		"send-saved --text",
+		"@Pheik13 main session -> InputPeerSelf only",
 		"--profile main|study",
 		"required account profile",
-		"Telegram operations are read-only",
+		"Harvesting operations are read-only",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("help missing %q:\n%s", want, stdout)
@@ -38,6 +41,15 @@ func TestRunHelpPrintsCommands(t *testing.T) {
 	}
 	if strings.Contains(stdout, "import-tdesktop") {
 		t.Fatalf("help must not expose Telegram Desktop import:\n%s", stdout)
+	}
+}
+
+func TestRunSendSavedHasNoRecipientOption(t *testing.T) {
+	client := mtproto.New(config.Config{Mode: config.ModeMain})
+	var out strings.Builder
+	err := runSendSaved(config.Config{Mode: config.ModeMain}, client, []string{"--recipient", "@someone", "--text", "test"}, &out)
+	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -recipient") {
+		t.Fatalf("err=%v output=%s", err, out.String())
 	}
 }
 
