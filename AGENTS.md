@@ -17,7 +17,8 @@
 ## Commands
 - Install pinned dependencies: `make setup`
 - Format: `make fmt`
-- Standard validation: `make check`
+- Full validation (same contract as CI): `make verify`
+- Fast validation: `make check`
 - Static/security audit: `make audit`
 - Build reusable CLI: `make build`; Make commands rebuild `bin/telegram-harvest` only when Go/module inputs change.
 - Doctor: `make doctor PROFILE=<main|study>`

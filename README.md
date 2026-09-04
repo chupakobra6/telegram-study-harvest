@@ -370,6 +370,7 @@ make fmt
 make test
 make check
 make audit
+make verify
 bin/telegram-harvest --help
 bin/telegram-harvest --profile main daily --help
 bin/telegram-harvest --profile main daily-catchup --help

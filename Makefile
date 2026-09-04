@@ -13,7 +13,7 @@ MEDIA_LIMIT_FLAGS = \
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup build fmt fmt-check test check audit doctor login daily daily-catchup daily-download-media transcribe-file chats topics dump sync download-media compact agent-view refresh-agent-view clean
+.PHONY: help setup build fmt fmt-check test race check audit verify doctor login daily daily-catchup daily-download-media transcribe-file chats topics dump sync download-media compact agent-view refresh-agent-view clean
 
 help:
 	@printf "Available commands:\\n"
@@ -21,8 +21,10 @@ help:
 	@printf "  make build   # build the reusable local CLI binary\\n"
 	@printf "  make fmt     # gofmt project files\\n"
 	@printf "  make test    # go test ./...\\n"
+	@printf "  make race    # run tests with the race detector\\n"
 	@printf "  make check   # formatting, module, vet, and test validation\\n"
 	@printf "  make audit   # static analysis and reachable vulnerability scan\\n"
+	@printf "  make verify  # full local and CI validation\\n"
 	@printf "  make doctor PROFILE=main|study # show config/session status\\n"
 	@printf "  make login PROFILE=main|study  # create MTProto user session\\n"
 	@printf "  make daily PROFILE=main DATE=today|yesterday|YYYY-MM-DD # build one daily report\\n"
@@ -62,6 +64,9 @@ fmt-check:
 test:
 	go test ./...
 
+race:
+	go test -race ./...
+
 check: fmt-check
 	go mod tidy -diff
 	go mod verify
@@ -69,8 +74,10 @@ check: fmt-check
 	go test ./...
 
 audit:
-	go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
-	go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+	go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
+	go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+
+verify: check race audit
 
 doctor login daily daily-catchup daily-download-media transcribe-file chats topics dump sync download-media compact agent-view: $(CLI)
 
