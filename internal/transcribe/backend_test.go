@@ -94,6 +94,14 @@ func TestProductionWhisperProfileIsPinned(t *testing.T) {
 	if descriptor.Language != ProductionLanguage || descriptor.Threads != ProductionThreads {
 		t.Fatalf("production language/threads = %q/%d", descriptor.Language, descriptor.Threads)
 	}
+	if descriptor.Language != "auto" {
+		t.Fatalf("production language = %q, want automatic detection", descriptor.Language)
+	}
+	forcedRussian := opts
+	forcedRussian.Language = "ru"
+	if opts.CacheIdentity() == forcedRussian.CacheIdentity() {
+		t.Fatal("automatic-language production profile reused the forced-Russian cache identity")
+	}
 	if descriptor.Decode == nil || descriptor.Decode.BeamSize != 5 {
 		t.Fatalf("production beam size = %#v, want 5", descriptor.Decode)
 	}
@@ -133,7 +141,7 @@ func TestProductionWhisperProfileUsesOneAdaptivePolicy(t *testing.T) {
 		descriptor.Adaptive.LeadingSilenceSeconds != adaptiveLeadingSilenceSeconds ||
 		descriptor.Adaptive.ScanWindowSeconds != 300 || descriptor.Adaptive.ScanOverlapSeconds != 10 ||
 		descriptor.Adaptive.LeadInMS != 1000 ||
-		descriptor.Adaptive.LanguagePolicy != whisperLongFormLanguagePolicy ||
+		descriptor.Adaptive.LanguagePolicy != whisperAdaptiveLanguagePolicy ||
 		descriptor.Adaptive.LanguageProbeSeconds != longFormLanguageProbeSeconds ||
 		descriptor.Adaptive.RussianInitialPrompt != longFormRussianInitialPrompt ||
 		descriptor.Adaptive.CarryInitialPrompt ||

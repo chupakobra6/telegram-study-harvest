@@ -17,14 +17,14 @@ import (
 const (
 	BackendWhisperCPP                = "whispercpp"
 	AcceleratorMetal                 = "metal"
-	ProductionLanguage               = "ru"
+	ProductionLanguage               = "auto"
 	ProductionThreads                = 4
 	ProductionModelFile              = "ggml-large-v3-turbo-q5_0.bin"
 	ProductionSpeechGateFile         = "ggml-silero-v6.2.0.bin"
-	whisperShortFormStrategy         = "russian-no-timestamps-v1"
+	whisperShortFormStrategy         = "auto-language-no-timestamps-v2"
 	whisperLongFormStrategy          = "native-timestamped-v3"
 	whisperAdaptiveRoutingPolicy     = "duration-or-leading-silence-v1"
-	whisperLongFormLanguagePolicy    = "detect-russian-punctuation-v1"
+	whisperAdaptiveLanguagePolicy    = "auto-short-detect-russian-punctuation-long-v2"
 	whisperRepetitionPolicy          = "exact-token-cycle-v1"
 	adaptiveLongMediaSeconds         = 180
 	adaptiveLeadingSilenceSeconds    = 10
@@ -419,7 +419,7 @@ func (o WhisperAdaptiveOptions) normalized() WhisperAdaptiveDescriptor {
 		ScanWindowSeconds:                positiveOr(o.ScanWindowSeconds, 300),
 		ScanOverlapSeconds:               positiveOr(o.ScanOverlapSeconds, 10),
 		LeadInMS:                         positiveOr(o.LeadInMS, 1000),
-		LanguagePolicy:                   whisperLongFormLanguagePolicy,
+		LanguagePolicy:                   whisperAdaptiveLanguagePolicy,
 		LanguageProbeSeconds:             positiveOr(o.LanguageProbeSeconds, longFormLanguageProbeSeconds),
 		RussianInitialPrompt:             strings.TrimSpace(o.RussianInitialPrompt),
 		CarryInitialPrompt:               o.CarryInitialPrompt,

@@ -209,7 +209,7 @@ Downloader выбирает chunk concurrency автоматически по р
 
 ## ASR pipeline
 
-Канонический production backend — `whisper.cpp large-v3-turbo q5_0 + Metal`, четыре CPU helper threads и `beam_size=5`. Telegram, локальный `transcribe-file` и OBS используют один публичный `adaptive-media-v1`: режим выбирает Harvest после фактического WAV и Silero bounds. CLI позволяет менять только локальные пути к server/model/gate/ffmpeg и включать или выключать транскрибацию.
+Канонический production backend — `whisper.cpp large-v3-turbo q5_0 + Metal`, четыре CPU helper threads и `beam_size=5`. Telegram, локальный `transcribe-file` и OBS используют один публичный `adaptive-media-v2`: режим выбирает Harvest после фактического WAV и Silero bounds. CLI позволяет менять только локальные пути к server/model/gate/ffmpeg и включать или выключать транскрибацию.
 
 Тот же production-профиль доступен локальным автоматизациям без Telegram RPC:
 
@@ -219,9 +219,9 @@ bin/telegram-harvest --profile main transcribe-file \
   --output /absolute/path/transcript.txt
 ```
 
-Команда пишет plain UTF-8 transcript в `--output`, а в stdout — ASR contract v4 с `profile_id=adaptive-media-v1`, `validation_status`, выбранными `strategy`/`route_reason`, backend descriptor, diagnostics и timings. `transcribe-file --check` проверяет runtime/model paths без обработки медиа и возвращает `runtime-ready`. OBS доверяет только этому публичному контракту; Whisper, VAD, Metal/decode, language/prompt и post-filter настраиваются только в `internal/transcribe`.
+Команда пишет plain UTF-8 transcript в `--output`, а в stdout — ASR contract v4 с `profile_id=adaptive-media-v2`, `validation_status`, выбранными `strategy`/`route_reason`, backend descriptor, diagnostics и timings. `transcribe-file --check` проверяет runtime/model paths без обработки медиа и возвращает `runtime-ready`. OBS доверяет только этому публичному контракту; Whisper, VAD, Metal/decode, language/prompt и post-filter настраиваются только в `internal/transcribe`.
 
-Медиа короче 180 секунд, где речь начинается раньше 10 секунд, сохраняет прежний русский `no_timestamps` short decode. Длительность от 180 секунд либо leading silence от 10 секунд автоматически включает long-form: bounded Silero находит границы речи, сохраняется секундный lead-in, физический 15-секундный WAV probe определяет язык, а затем выполняется один timestamped decode. Русский получает punctuation seed `Да. Нет? Хорошо! Пожалуйста, продолжайте.` без carry; английский и остальные языки — без prompt. Внешних чанков и текстовой склейки нет.
+Медиа короче 180 секунд, где речь начинается раньше 10 секунд, использует быстрый `no_timestamps` short decode с автоопределением языка. Длительность от 180 секунд либо leading silence от 10 секунд автоматически включает long-form: bounded Silero находит границы речи, сохраняется секундный lead-in, физический 15-секундный WAV probe определяет язык, а затем выполняется один timestamped decode. Русский получает punctuation seed `Да. Нет? Хорошо! Пожалуйста, продолжайте.` без carry; английский и остальные языки — без prompt. Внешних чанков и текстовой склейки нет.
 
 Для long-form Harvest проверяет duration, монотонность timestamps, достижение последней Silero-речи и отсутствие только явного exact-token цикла (минимум пять повторов и 20 токенов). Допустимые речевые повторы не переписываются; одинаковые финальные строки по-прежнему схлопываются отдельно. `coverage-validated` доказывает структуру, хвост и отсутствие обнаруженного extreme loop, но не WER/CER. Все routing thresholds, prompt и decode settings входят в descriptor/cache identity.
 

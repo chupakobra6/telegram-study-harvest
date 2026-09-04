@@ -202,7 +202,7 @@ func TestRunPrintConfigCanSelectMainProfile(t *testing.T) {
 		"session=" + filepath.Join(dir, "main-session.json"),
 		"daily_asr_backend=whispercpp",
 		"daily_whisper_accelerator=metal",
-		"daily_asr_language=ru",
+		"daily_asr_language=auto",
 		"daily_asr_workers=1",
 	} {
 		if !strings.Contains(stdout, want) {

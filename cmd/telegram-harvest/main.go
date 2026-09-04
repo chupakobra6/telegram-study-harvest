@@ -2047,7 +2047,7 @@ func dailyTranscribeOptions(opts harvest.HistoryOptions) transcribe.Options {
 
 const (
 	transcribeFileContractVersion    = 4
-	transcribeProfileAdaptiveMedia   = "adaptive-media-v1"
+	transcribeProfileAdaptiveMedia   = "adaptive-media-v2"
 	transcribeValidationRuntimeReady = "runtime-ready"
 	transcribeValidationTranscribed  = "transcribed"
 	transcribeValidationNoSpeech     = "no-speech"

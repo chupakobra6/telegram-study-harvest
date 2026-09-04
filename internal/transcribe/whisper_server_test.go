@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,6 +15,49 @@ import (
 	"testing"
 	"time"
 )
+
+func TestWhisperServerRunnerShortFormUsesAutomaticLanguage(t *testing.T) {
+	dir := t.TempDir()
+	wavPath := filepath.Join(dir, "english.wav")
+	if err := os.WriteFile(wavPath, make([]byte, 32044), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if err := request.ParseMultipartForm(2 << 20); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer request.MultipartForm.RemoveAll()
+		if request.FormValue("language") != "auto" {
+			http.Error(w, "short-form language must be auto", http.StatusBadRequest)
+			return
+		}
+		if request.FormValue("detect_language") != "" || request.FormValue("prompt") != "" ||
+			request.FormValue("no_timestamps") != "true" || request.FormValue("token_timestamps") != "false" {
+			http.Error(w, "unexpected short-form decode options", http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(whisperResponse{
+			Text:     " an English short-form transcript ",
+			Language: "english",
+			Segments: []whisperSegment{{AverageLogProbability: -0.1}},
+		})
+	}))
+	defer server.Close()
+
+	opts := ProductionOptions("whisper-server", ProductionModelFile, ProductionSpeechGateFile, "ffmpeg", nil)
+	runner := &WhisperServerRunner{opts: opts, baseURL: server.URL, client: server.Client()}
+	text, diagnostics, err := runner.inferLocked(t.Context(), wavPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(text) != "an English short-form transcript" {
+		t.Fatalf("text = %q", text)
+	}
+	if diagnostics == nil || diagnostics.Segments != 1 {
+		t.Fatalf("diagnostics = %#v", diagnostics)
+	}
+}
 
 func TestWhisperServerRunnerKeepsModelSession(t *testing.T) {
 	if os.Getenv("GO_WANT_WHISPER_HELPER") == "1" {
