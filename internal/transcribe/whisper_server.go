@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/chupakobra6/telegram-harvest/internal/stages"
 )
@@ -283,7 +284,7 @@ func (r *WhisperServerRunner) inferLongFormLocked(ctx context.Context, wavPath s
 	diagnostics.DetectedLanguage = strings.ToLower(strings.TrimSpace(detected.Language))
 	diagnostics.LanguageDetectionSeconds = languageDetectionDuration.Seconds()
 	diagnostics.InitialPromptApplied = decodeRequest.InitialPrompt != ""
-	text, repeated := stripWhisperLongFormTerminalRepetitions(decoded.Text)
+	text, repeated := stripWhisperLongFormTerminalRepetitions(decoded.Text, settings)
 	diagnostics.RemovedTerminalHallucinations = append(diagnostics.RemovedTerminalHallucinations, repeated...)
 	repetition := analyzeWhisperRepetition(text, settings)
 	diagnostics.ExtremeRepetitionDetected = repetition.Extreme
@@ -977,9 +978,15 @@ var whisperTerminalHallucinations = map[string]struct{}{
 
 type whisperRepetitionAnalysis struct {
 	Extreme     bool
+	StartToken  int
 	BlockTokens int
 	Repetitions int
 	SpanTokens  int
+}
+
+type whisperTextToken struct {
+	normalized string
+	startByte  int
 }
 
 // analyzeWhisperRepetition is intentionally conservative. It reports the
@@ -987,7 +994,11 @@ type whisperRepetitionAnalysis struct {
 // carried by the adaptive descriptor. Natural hesitations and short emphatic
 // repetitions remain untouched.
 func analyzeWhisperRepetition(text string, policy WhisperAdaptiveDescriptor) whisperRepetitionAnalysis {
-	tokens := strings.Fields(normalizeWhisperHallucination(text))
+	textTokens := tokenizeWhisperText(text)
+	tokens := make([]string, len(textTokens))
+	for index := range textTokens {
+		tokens[index] = textTokens[index].normalized
+	}
 	best := whisperRepetitionAnalysis{}
 	for start := 0; start < len(tokens); start++ {
 		maxBlock := min(policy.RepetitionMaxBlockTokens, (len(tokens)-start)/2)
@@ -1001,6 +1012,7 @@ func analyzeWhisperRepetition(text string, policy WhisperAdaptiveDescriptor) whi
 			}
 			span := blockSize * repetitions
 			if repetitions > best.Repetitions || repetitions == best.Repetitions && span > best.SpanTokens {
+				best.StartToken = start
 				best.BlockTokens = blockSize
 				best.Repetitions = repetitions
 				best.SpanTokens = span
@@ -1012,6 +1024,39 @@ func analyzeWhisperRepetition(text string, policy WhisperAdaptiveDescriptor) whi
 	}
 	best.Extreme = best.Repetitions >= policy.RepetitionMinRepeats && best.SpanTokens >= policy.RepetitionMinSpanTokens
 	return best
+}
+
+func tokenizeWhisperText(text string) []whisperTextToken {
+	var tokens []whisperTextToken
+	var normalized strings.Builder
+	startByte := -1
+	flush := func() {
+		if startByte < 0 {
+			return
+		}
+		tokens = append(tokens, whisperTextToken{normalized: normalized.String(), startByte: startByte})
+		normalized.Reset()
+		startByte = -1
+	}
+	for index, current := range text {
+		current = unicode.ToLower(current)
+		if current == 'ё' {
+			current = 'е'
+		}
+		isASCII := current >= 'a' && current <= 'z'
+		isCyrillic := current >= 'а' && current <= 'я'
+		isDigit := current >= '0' && current <= '9'
+		if isASCII || isCyrillic || isDigit {
+			if startByte < 0 {
+				startByte = index
+			}
+			normalized.WriteRune(current)
+			continue
+		}
+		flush()
+	}
+	flush()
+	return tokens
 }
 
 func equalTokenBlock(left, right []string) bool {
@@ -1030,7 +1075,7 @@ func equalTokenBlock(left, right []string) bool {
 // lines at the very end of a timestamped long-form result. Repetition loops are
 // a known terminal failure mode; keeping the first occurrence preserves a real
 // closing word while avoiding a broad phrase blacklist.
-func stripWhisperLongFormTerminalRepetitions(text string) (string, []string) {
+func stripWhisperLongFormTerminalRepetitions(text string, policy WhisperAdaptiveDescriptor) (string, []string) {
 	lines := strings.Split(strings.TrimSpace(text), "\n")
 	var removed []string
 	for len(lines) > 1 {
@@ -1045,7 +1090,18 @@ func stripWhisperLongFormTerminalRepetitions(text string) (string, []string) {
 	for left, right := 0, len(removed)-1; left < right; left, right = left+1, right-1 {
 		removed[left], removed[right] = removed[right], removed[left]
 	}
-	return strings.TrimSpace(strings.Join(lines, "\n")), removed
+	filtered := strings.TrimSpace(strings.Join(lines, "\n"))
+	repetition := analyzeWhisperRepetition(filtered, policy)
+	tokens := tokenizeWhisperText(filtered)
+	if repetition.Extreme && repetition.StartToken+repetition.SpanTokens == len(tokens) {
+		secondBlock := repetition.StartToken + repetition.BlockTokens
+		if secondBlock < len(tokens) {
+			cut := tokens[secondBlock].startByte
+			removed = append(removed, strings.TrimSpace(filtered[cut:]))
+			filtered = strings.TrimSpace(filtered[:cut])
+		}
+	}
+	return filtered, removed
 }
 
 func stripWhisperTerminalHallucinations(text string) (string, []string) {
