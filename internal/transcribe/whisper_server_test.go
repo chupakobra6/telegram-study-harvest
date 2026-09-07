@@ -275,7 +275,7 @@ head -c 480044 /dev/zero > "$last"
 		start1, end1 := 119.8, 120.2
 		start2, end2 := 120.2, 239.7
 		_ = json.NewEncoder(w).Encode(whisperResponse{
-			Text:     " Игорь объясняет Kubernetes прямо через прежнюю границу без разрыва контекста ",
+			Text:     " Игорь объясняет Kubernetes прямо через прежнюю границу без разрыва контекста\n" + strings.Repeat("Продолжение следует!\n", 29),
 			Duration: 240,
 			Segments: []whisperSegment{
 				{Start: &start0, End: &end0, AverageLogProbability: -0.2},
@@ -302,7 +302,7 @@ head -c 480044 /dev/zero > "$last"
 	if requests != 2 {
 		t.Fatalf("requests = %d, want one language probe and one native long-form request", requests)
 	}
-	if strings.TrimSpace(text) != "Игорь объясняет Kubernetes прямо через прежнюю границу без разрыва контекста" {
+	if strings.TrimSpace(text) != "Игорь объясняет Kubernetes прямо через прежнюю границу без разрыва контекста\nПродолжение следует!" {
 		t.Fatalf("text = %q", text)
 	}
 	if diagnostics == nil || !diagnostics.TimestampedSegments || diagnostics.Segments != 3 ||
@@ -310,7 +310,8 @@ head -c 480044 /dev/zero > "$last"
 		diagnostics.LastSegmentEndSeconds != 239.7 || diagnostics.LastDetectedSpeechEndSeconds != 239.5 ||
 		!diagnostics.CoverageValidated || diagnostics.TrailingSpeechCoverageGapSeconds != 0 ||
 		diagnostics.DetectedLanguage != "russian" || diagnostics.LanguageDetectionSeconds <= 0 || !diagnostics.InitialPromptApplied ||
-		diagnostics.TrailingCoverageToleranceSeconds != longFormCoverageToleranceSeconds {
+		diagnostics.TrailingCoverageToleranceSeconds != longFormCoverageToleranceSeconds || !diagnostics.RepetitionValidated ||
+		diagnostics.ExtremeRepetitionDetected || len(diagnostics.RemovedTerminalHallucinations) != 28 {
 		t.Fatalf("diagnostics = %#v", diagnostics)
 	}
 	if matches, err := filepath.Glob(filepath.Join(dir, ".asr-language-probe-*.wav")); err != nil || len(matches) != 0 {

@@ -197,19 +197,12 @@ func (r *WhisperServerRunner) RunDetailed(ctx context.Context, inputPath string,
 	languageDetectionDuration := time.Duration(diagnostics.LanguageDetectionSeconds * float64(time.Second))
 	asrDuration := speechGateDuration + longFormPreparationDuration + inferenceDuration
 	text = strings.TrimSpace(text)
-	repetition := analyzeWhisperRepetition(text, r.opts.WhisperAdaptive.normalized())
-	diagnostics.ExtremeRepetitionDetected = repetition.Extreme
-	diagnostics.MaximumRepeatedTokenBlock = repetition.BlockTokens
-	diagnostics.MaximumTokenBlockRepetitions = repetition.Repetitions
-	diagnostics.MaximumRepeatedTokenSpan = repetition.SpanTokens
-	if strategy == whisperLongFormStrategy {
-		diagnostics.RepetitionValidated = !repetition.Extreme
-		if repetition.Extreme {
-			return Result{}, fmt.Errorf("whisper.cpp long-form returned an extreme repetition loop: block=%d tokens repetitions=%d span=%d tokens", repetition.BlockTokens, repetition.Repetitions, repetition.SpanTokens)
-		}
-		var repeated []string
-		text, repeated = stripWhisperLongFormTerminalRepetitions(text)
-		diagnostics.RemovedTerminalHallucinations = append(diagnostics.RemovedTerminalHallucinations, repeated...)
+	if strategy != whisperLongFormStrategy {
+		repetition := analyzeWhisperRepetition(text, r.opts.WhisperAdaptive.normalized())
+		diagnostics.ExtremeRepetitionDetected = repetition.Extreme
+		diagnostics.MaximumRepeatedTokenBlock = repetition.BlockTokens
+		diagnostics.MaximumTokenBlockRepetitions = repetition.Repetitions
+		diagnostics.MaximumRepeatedTokenSpan = repetition.SpanTokens
 	}
 	var removed []string
 	text, removed = stripWhisperTerminalHallucinations(text)
@@ -290,7 +283,18 @@ func (r *WhisperServerRunner) inferLongFormLocked(ctx context.Context, wavPath s
 	diagnostics.DetectedLanguage = strings.ToLower(strings.TrimSpace(detected.Language))
 	diagnostics.LanguageDetectionSeconds = languageDetectionDuration.Seconds()
 	diagnostics.InitialPromptApplied = decodeRequest.InitialPrompt != ""
-	return decoded.Text, diagnostics, nil
+	text, repeated := stripWhisperLongFormTerminalRepetitions(decoded.Text)
+	diagnostics.RemovedTerminalHallucinations = append(diagnostics.RemovedTerminalHallucinations, repeated...)
+	repetition := analyzeWhisperRepetition(text, settings)
+	diagnostics.ExtremeRepetitionDetected = repetition.Extreme
+	diagnostics.MaximumRepeatedTokenBlock = repetition.BlockTokens
+	diagnostics.MaximumTokenBlockRepetitions = repetition.Repetitions
+	diagnostics.MaximumRepeatedTokenSpan = repetition.SpanTokens
+	diagnostics.RepetitionValidated = !repetition.Extreme
+	if repetition.Extreme {
+		return "", nil, fmt.Errorf("whisper.cpp long-form returned an extreme repetition loop: block=%d tokens repetitions=%d span=%d tokens", repetition.BlockTokens, repetition.Repetitions, repetition.SpanTokens)
+	}
+	return text, diagnostics, nil
 }
 
 func prepareLanguageProbeWAV(ctx context.Context, opts Options, wavPath string, maxSeconds int) (string, func(), error) {
