@@ -383,6 +383,41 @@ func TestValidateTimestampedLongFormResponseRequiresTrailingSpeechCoverage(t *te
 	}
 }
 
+func TestValidateTimestampedLongFormResponseBoundsOnlyTerminalWindowOverrun(t *testing.T) {
+	start0, end0 := 2100.0, 2170.38
+	start1, end1 := 2170.38, 2200.36
+	decoded := whisperResponse{
+		Text:     "финальная реплика",
+		Duration: 2171.499,
+		Segments: []whisperSegment{
+			{Start: &start0, End: &end0},
+			{Start: &start1, End: &end1},
+		},
+	}
+	gap, err := validateTimestampedLongFormResponse(decoded, 2171.499, 2171.2, 2)
+	if err != nil || gap != 0 {
+		t.Fatalf("terminal window overrun: gap=%.3f err=%v", gap, err)
+	}
+	if end := boundedTerminalSegmentEnd(decoded); end != decoded.Duration {
+		t.Fatalf("bounded terminal end = %.3f, want %.3f", end, decoded.Duration)
+	}
+
+	badEnd := 2200.0
+	decoded.Segments = []whisperSegment{
+		{Start: &start0, End: &badEnd},
+		{Start: &start1, End: &end1},
+	}
+	if _, err := validateTimestampedLongFormResponse(decoded, 2171.499, 2171.2, 2); err == nil {
+		t.Fatal("non-terminal timestamp overrun was accepted")
+	}
+
+	badStart := decoded.Duration
+	decoded.Segments = []whisperSegment{{Start: &badStart, End: &end1}}
+	if _, err := validateTimestampedLongFormResponse(decoded, 2171.499, 2171.2, 2); err == nil {
+		t.Fatal("terminal segment entirely beyond the audio was accepted")
+	}
+}
+
 func TestStripWhisperTerminalHallucinationsIsConservative(t *testing.T) {
 	text := "Реальное содержание.\nСубтитры сделал DimaTorzok"
 	got, removed := stripWhisperTerminalHallucinations(text)

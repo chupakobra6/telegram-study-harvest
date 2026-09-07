@@ -282,7 +282,7 @@ func (r *WhisperServerRunner) inferLongFormLocked(ctx context.Context, wavPath s
 	diagnostics.TimestampedSegments = true
 	diagnostics.DecodedAudioDurationSeconds = decoded.Duration
 	diagnostics.FirstSegmentStartSeconds = *decoded.Segments[0].Start
-	diagnostics.LastSegmentEndSeconds = *decoded.Segments[len(decoded.Segments)-1].End
+	diagnostics.LastSegmentEndSeconds = boundedTerminalSegmentEnd(decoded)
 	diagnostics.LastDetectedSpeechEndSeconds = lastDetectedSpeechEnd
 	diagnostics.TrailingSpeechCoverageGapSeconds = coverageGap
 	diagnostics.TrailingCoverageToleranceSeconds = settings.TrailingCoverageToleranceSeconds
@@ -354,8 +354,21 @@ func validateTimestampedLongFormResponse(decoded whisperResponse, expectedDurati
 		}
 		start := *segment.Start
 		end := *segment.End
-		if start < 0 || end < start || start < previousStart || end < previousEnd || end > decoded.Duration+1 {
+		if start < 0 || end < start || start < previousStart {
 			return 0, fmt.Errorf("whisper.cpp long-form segment %d has invalid timestamps %.3f..%.3f", index, start, end)
+		}
+		// whisper.cpp can snap the final segment end to the end of its
+		// internal 30-second analysis window. Accept that overrun only when
+		// the terminal segment starts inside the real PCM duration, then use
+		// the real duration for monotonicity and trailing-coverage checks.
+		if end > decoded.Duration {
+			if index != len(decoded.Segments)-1 || start >= decoded.Duration {
+				return 0, fmt.Errorf("whisper.cpp long-form segment %d has invalid timestamps %.3f..%.3f", index, start, end)
+			}
+			end = decoded.Duration
+		}
+		if end < previousEnd {
+			return 0, fmt.Errorf("whisper.cpp long-form segment %d has invalid timestamps %.3f..%.3f", index, start, *segment.End)
 		}
 		previousStart = start
 		previousEnd = end
@@ -365,6 +378,11 @@ func validateTimestampedLongFormResponse(decoded whisperResponse, expectedDurati
 		return coverageGap, fmt.Errorf("whisper.cpp long-form ended at %.3fs, %.3fs before the last detected speech at %.3fs (tolerance %.3fs)", previousEnd, coverageGap, lastDetectedSpeechEnd, coverageTolerance)
 	}
 	return coverageGap, nil
+}
+
+func boundedTerminalSegmentEnd(decoded whisperResponse) float64 {
+	end := *decoded.Segments[len(decoded.Segments)-1].End
+	return math.Min(end, decoded.Duration)
 }
 
 type longFormAudioPreparation struct {
