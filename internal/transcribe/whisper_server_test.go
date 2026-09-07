@@ -440,10 +440,10 @@ func TestStripWhisperTerminalHallucinationsIsConservative(t *testing.T) {
 	}
 }
 
-func TestStripWhisperLongFormTerminalRepetitionsKeepsOneClosingPhrase(t *testing.T) {
+func TestCollapseWhisperLongFormExactRepetitionsKeepsOneCycle(t *testing.T) {
 	policy := ProductionWhisperAdaptive().normalized()
 	text := "Спасибо тебе большое.\nУдачи.\nСпасибо.\nспасибо!\nСПАСИБО"
-	got, removed := stripWhisperLongFormTerminalRepetitions(text, policy)
+	got, removed := collapseWhisperLongFormExactRepetitions(text, policy)
 	if got != "Спасибо тебе большое.\nУдачи.\nСпасибо." {
 		t.Fatalf("filtered text = %q", got)
 	}
@@ -451,20 +451,20 @@ func TestStripWhisperLongFormTerminalRepetitionsKeepsOneClosingPhrase(t *testing
 		t.Fatalf("removed = %#v", removed)
 	}
 
-	got, removed = stripWhisperLongFormTerminalRepetitions("Да.\nДа.\nПродолжаем.", policy)
+	got, removed = collapseWhisperLongFormExactRepetitions("Да.\nДа.\nПродолжаем.", policy)
 	if got != "Да.\nДа.\nПродолжаем." || len(removed) != 0 {
 		t.Fatalf("non-terminal repetition changed: text=%q removed=%#v", got, removed)
 	}
 
-	got, removed = stripWhisperLongFormTerminalRepetitions("Финал.\n"+strings.Repeat("точный цикл! ", 29), policy)
+	got, removed = collapseWhisperLongFormExactRepetitions("Финал.\n"+strings.Repeat("точный цикл! ", 29), policy)
 	if got != "Финал.\nточный цикл!" || len(removed) != 1 {
 		t.Fatalf("terminal token cycle: text=%q removed=%d", got, len(removed))
 	}
 
 	middle := strings.Repeat("точный цикл! ", 29) + "Содержательный конец."
-	got, removed = stripWhisperLongFormTerminalRepetitions(middle, policy)
-	if got != strings.TrimSpace(middle) || len(removed) != 0 {
-		t.Fatalf("middle token cycle changed: text=%q removed=%d", got, len(removed))
+	got, removed = collapseWhisperLongFormExactRepetitions(middle, policy)
+	if got != "точный цикл! Содержательный конец." || len(removed) != 1 {
+		t.Fatalf("internal token cycle: text=%q removed=%d", got, len(removed))
 	}
 }
 

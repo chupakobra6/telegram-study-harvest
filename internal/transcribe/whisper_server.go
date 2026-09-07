@@ -284,7 +284,7 @@ func (r *WhisperServerRunner) inferLongFormLocked(ctx context.Context, wavPath s
 	diagnostics.DetectedLanguage = strings.ToLower(strings.TrimSpace(detected.Language))
 	diagnostics.LanguageDetectionSeconds = languageDetectionDuration.Seconds()
 	diagnostics.InitialPromptApplied = decodeRequest.InitialPrompt != ""
-	text, repeated := stripWhisperLongFormTerminalRepetitions(decoded.Text, settings)
+	text, repeated := collapseWhisperLongFormExactRepetitions(decoded.Text, settings)
 	diagnostics.RemovedTerminalHallucinations = append(diagnostics.RemovedTerminalHallucinations, repeated...)
 	repetition := analyzeWhisperRepetition(text, settings)
 	diagnostics.ExtremeRepetitionDetected = repetition.Extreme
@@ -1071,11 +1071,12 @@ func equalTokenBlock(left, right []string) bool {
 	return true
 }
 
-// stripWhisperLongFormTerminalRepetitions removes only consecutive identical
-// lines at the very end of a timestamped long-form result. Repetition loops are
-// a known terminal failure mode; keeping the first occurrence preserves a real
-// closing word while avoiding a broad phrase blacklist.
-func stripWhisperLongFormTerminalRepetitions(text string, policy WhisperAdaptiveDescriptor) (string, []string) {
+// collapseWhisperLongFormExactRepetitions removes only exact token cycles that
+// already meet the extreme-loop safety thresholds. Keeping the first block
+// preserves a potentially real phrase; any meaningful text after the loop is
+// retained. Terminal duplicate lines are handled first so their punctuation
+// and casing variants remain easy to inspect in diagnostics.
+func collapseWhisperLongFormExactRepetitions(text string, policy WhisperAdaptiveDescriptor) (string, []string) {
 	lines := strings.Split(strings.TrimSpace(text), "\n")
 	var removed []string
 	for len(lines) > 1 {
@@ -1091,15 +1092,25 @@ func stripWhisperLongFormTerminalRepetitions(text string, policy WhisperAdaptive
 		removed[left], removed[right] = removed[right], removed[left]
 	}
 	filtered := strings.TrimSpace(strings.Join(lines, "\n"))
-	repetition := analyzeWhisperRepetition(filtered, policy)
-	tokens := tokenizeWhisperText(filtered)
-	if repetition.Extreme && repetition.StartToken+repetition.SpanTokens == len(tokens) {
-		secondBlock := repetition.StartToken + repetition.BlockTokens
-		if secondBlock < len(tokens) {
-			cut := tokens[secondBlock].startByte
-			removed = append(removed, strings.TrimSpace(filtered[cut:]))
-			filtered = strings.TrimSpace(filtered[:cut])
+	for {
+		repetition := analyzeWhisperRepetition(filtered, policy)
+		if !repetition.Extreme {
+			break
 		}
+		tokens := tokenizeWhisperText(filtered)
+		secondBlock := repetition.StartToken + repetition.BlockTokens
+		end := repetition.StartToken + repetition.SpanTokens
+		if secondBlock >= len(tokens) || end > len(tokens) {
+			break
+		}
+		cutStart := tokens[secondBlock].startByte
+		cutEnd := len(filtered)
+		if end < len(tokens) {
+			cutEnd = tokens[end].startByte
+		}
+		removed = append(removed, strings.TrimSpace(filtered[cutStart:cutEnd]))
+		filtered = strings.TrimSpace(filtered[:cutStart]) + " " + strings.TrimSpace(filtered[cutEnd:])
+		filtered = strings.TrimSpace(filtered)
 	}
 	return filtered, removed
 }

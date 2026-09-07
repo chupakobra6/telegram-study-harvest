@@ -25,7 +25,7 @@ const (
 	whisperLongFormStrategy          = "native-timestamped-v3"
 	whisperAdaptiveRoutingPolicy     = "duration-or-leading-silence-v1"
 	whisperAdaptiveLanguagePolicy    = "auto-short-detect-russian-punctuation-long-v2"
-	whisperRepetitionPolicy          = "exact-token-cycle-v1"
+	whisperRepetitionPolicy          = "collapse-exact-token-cycle-v2"
 	adaptiveLongMediaSeconds         = 180
 	adaptiveLeadingSilenceSeconds    = 10
 	adaptiveRepetitionMinRepeats     = 5
